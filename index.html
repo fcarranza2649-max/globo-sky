@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Globo Sky - Arcade</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(#78d9ff,#e9faff);color:#173554;text-align:center}
+main{max-width:650px;margin:auto;padding:15px}h1{color:#075985}.panel{background:#fff;padding:15px;margin:12px 0;border-radius:18px;box-shadow:0 5px 15px #33779922}
+input,button{padding:12px;border-radius:10px;border:1px solid #b4d8eb;font-size:16px}input{width:65%;max-width:260px}button{background:#0879d1;color:white;border:0;cursor:pointer;font-weight:bold}
+canvas{display:block;width:100%;max-width:420px;margin:10px auto;border:3px solid white;border-radius:16px;background:#b9edff;touch-action:none}
+.stats,.controls{display:flex;justify-content:space-around;gap:8px}.stat{font-weight:bold;font-size:18px}.controls button{min-width:90px;font-size:22px}
+#status,#rankingStatus{font-size:14px;min-height:20px}.small{font-size:12px;color:#567}table{width:100%;border-collapse:collapse}td,th{padding:9px 4px;border-bottom:1px solid #e2edf3}th{color:#0879d1}
+</style>
+</head>
+<body>
+<main>
+<h1>🎈 GLOBO SKY</h1><p>¡Sube lo más alto posible!</p>
+<section class="panel">
+<input id="username" maxlength="16" placeholder="Tu nombre de jugador" autocomplete="nickname">
+<button id="start">JUGAR</button>
+<div class="stats"><p class="stat">⭐ Puntos: <span id="score">0</span></p><p class="stat">🏆 Récord: <span id="best">0</span></p></div>
+<canvas id="game" width="360" height="480"></canvas>
+<div class="controls"><button id="left">⬅️</button><button id="right">➡️</button></div>
+<p id="status">Escribe tu nombre y pulsa JUGAR.</p>
+<p class="small">Usa ← →, A/D o los botones. En celular, toca el lado al que quieras moverte.</p>
+</section>
+<section class="panel"><h2>🏆 TOP 10 JUGADORES</h2><p id="rankingStatus">Cargando ranking...</p>
+<table><thead><tr><th>#</th><th>Jugador</th><th>Puntos</th></tr></thead><tbody id="ranking"></tbody></table>
+<button id="refresh">Actualizar ranking</button><p class="small">Sin internet, se usa el ranking guardado en este dispositivo.</p></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+"use strict";
+// Cuando crees Supabase, reemplaza los dos textos siguientes con tus datos.
+const SUPABASE_URL = "PEGA_AQUI_TU_PROJECT_URL";
+const SUPABASE_KEY = "PEGA_AQUI_TU_PUBLISHABLE_KEY";
+let db=null;
+if(window.supabase && SUPABASE_URL.startsWith("https://") && !SUPABASE_URL.includes("PEGA_AQUI") && SUPABASE_KEY.startsWith("sb_publishable_")){
+  db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+}
+const $=id=>document.getElementById(id),canvas=$("game"),ctx=canvas.getContext("2d");
+let playing=false,x=180,obstacles=[],score=0,frame=0,lastTime=0,animation=0,keys={},touchDirection=0;
+function localScores(){try{return JSON.parse(localStorage.getItem("globoScores")||"[]")}catch{return []}}
+function saveLocal(name,points){let a=localScores();a.push({username:name,score:points});a.sort((a,b)=>b.score-a.score);localStorage.setItem("globoScores",JSON.stringify(a.slice(0,10)))}
+function drawBalloon(x,y){ctx.save();ctx.translate(x,y);ctx.fillStyle="#ff477e";ctx.beginPath();ctx.ellipse(0,0,19,24,0,0,Math.PI*2);ctx.fill();ctx.fillStyle="#ffc0d4";ctx.beginPath();ctx.ellipse(-6,-8,5,8,-.4,0,Math.PI*2);ctx.fill();ctx.fillStyle="#dc2862";ctx.beginPath();ctx.moveTo(-4,22);ctx.lineTo(4,22);ctx.lineTo(0,29);ctx.fill();ctx.strokeStyle="#b24b75";ctx.beginPath();ctx.moveTo(0,29);ctx.lineTo(0,43);ctx.stroke();ctx.restore()}
+function draw(){ctx.clearRect(0,0,360,480);ctx.fillStyle="#b9edff";ctx.fillRect(0,0,360,480);ctx.fillStyle="#ffffffaa";for(let i=0;i<6;i++){let cx=(i*83+frame*.25)%400-20,cy=(i*91+frame*.6)%480;ctx.beginPath();ctx.arc(cx,cy,13,0,Math.PI*2);ctx.arc(cx+14,cy-5,17,0,Math.PI*2);ctx.arc(cx+29,cy,12,0,Math.PI*2);ctx.fill()}ctx.fillStyle="#52768c";for(const o of obstacles){ctx.fillRect(o.x,o.y,o.w,o.h);ctx.fillStyle="#7896a8";ctx.fillRect(o.x+4,o.y+4,Math.max(0,o.w-8),5);ctx.fillStyle="#52768c"}drawBalloon(x,390);if(!playing){ctx.fillStyle="#174666";ctx.font="bold 20px Arial";ctx.textAlign="center";ctx.fillText("¡A VOLAR! 🎈",180,90)}}
+function reset(){x=180;obstacles=[];score=0;frame=0;$("score").textContent="0";draw()}
+function start(){let name=$("username").value.trim();if(!name||name.length>16){$("status").textContent="Escribe un nombre de hasta 16 caracteres.";return}if(playing)return;cancelAnimationFrame(animation);reset();playing=true;$("start").disabled=true;$("status").textContent="¡Esquiva los obstáculos!";lastTime=0;animation=requestAnimationFrame(loop)}
+function loop(time){if(!playing)return;let dt=lastTime?Math.min((time-lastTime)/16.67,2):1;lastTime=time;frame+=dt;if(keys.ArrowLeft||keys.a||touchDirection===-1)x-=4*dt;if(keys.ArrowRight||keys.d||touchDirection===1)x+=4*dt;x=Math.max(22,Math.min(338,x));if(Math.floor(frame)%42===0&&(!obstacles.length||obstacles[obstacles.length-1].y>100)){let gap=92,gapX=35+Math.random()*200;obstacles.push({x:0,y:-25,w:gapX,h:20},{x:gapX+gap,y:-25,w:360-gapX-gap,h:20})}let speed=2.2+Math.min(score/180,3);for(const o of obstacles){o.y+=speed*dt;if(o.y<415&&o.y+o.h>365&&x+14>o.x&&x-14<o.x+o.w){endGame();return}}obstacles=obstacles.filter(o=>o.y<500);score+=Math.floor(dt);$("score").textContent=score;draw();animation=requestAnimationFrame(loop)}
+async function endGame(){playing=false;cancelAnimationFrame(animation);$("start").disabled=false;let name=$("username").value.trim().slice(0,16);$("status").textContent="¡Fin del juego! Puntuación: "+score;$("best").textContent=Math.max(Number($("best").textContent),score);if(score>0){saveLocal(name,score);await loadRanking();if(db&&navigator.onLine){$("status").textContent="Enviando puntuación...";let {error}=await db.from("scores").insert({username:name,score});$("status").textContent=error?"Puntos guardados localmente; no se pudo sincronizar online.":"¡Puntuación enviada al ranking online!";await loadRanking()}else $("status").textContent="Puntuación guardada en este dispositivo. Configura Supabase para el ranking online."}draw()}
+async function loadRanking(){let rows=localScores(),online=false;if(db&&navigator.onLine){let {data,error}=await db.from("scores").select("username,score").order("score",{ascending:false}).limit(10);if(!error&&data){rows=data;online=true}}rows.sort((a,b)=>b.score-a.score);$("rankingStatus").textContent=online?"🌐 Ranking online":"📱 Ranking local de este dispositivo";let tb=$("ranking");tb.replaceChildren();rows.slice(0,10).forEach((r,i)=>{let tr=document.createElement("tr");[String(i+1),r.username,String(r.score)].forEach(v=>{let td=document.createElement("td");td.textContent=v;tr.appendChild(td)});tb.appendChild(tr)});if(!rows.length){let tr=document.createElement("tr"),td=document.createElement("td");td.colSpan=3;td.textContent="¡Sé el primero en jugar!";tr.appendChild(td);tb.appendChild(tr)}}
+$("start").addEventListener("click",start);$("refresh").addEventListener("click",loadRanking);$("username").addEventListener("keydown",e=>{if(e.key==="Enter")start()});document.addEventListener("keydown",e=>{if(["ArrowLeft","ArrowRight"," "].includes(e.key))e.preventDefault();keys[e.key]=true});document.addEventListener("keyup",e=>keys[e.key]=false);
+function bindHold(id,d){let b=$(id);b.addEventListener("pointerdown",e=>{e.preventDefault();touchDirection=d});["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,()=>{if(touchDirection===d)touchDirection=0}))}bindHold("left",-1);bindHold("right",1);
+canvas.addEventListener("pointerdown",e=>{if(!playing)return;let r=canvas.getBoundingClientRect();x=(e.clientX-r.left)/r.width*360});
+window.addEventListener("online",loadRanking);draw();loadRanking();
+</script>
+</body>
+</html>
